@@ -7,44 +7,51 @@ const router = express.Router();
 
 router.post("/register", async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { email, password, fullName } = req.body;
 
-        // 1. Validate input
-        if (!email || !password) {
-            return res.status(400).json({ error: "Email and password are required" });
+        if (!email || !password || !fullName) {
+            return res.status(400).json({
+                error: "Email, password, and full name are required",
+            });
         }
 
-        // 2. Check for existing user
         const existingUser = await prisma.user.findUnique({
             where: { email },
         });
 
         if (existingUser) {
-            return res.status(409).json({ error: "Email already in use" });
+            return res.status(409).json({ error: "User already exists" });
         }
 
-        // 3. Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // 4. Create user
+        // Create user + profile in one transaction
         const user = await prisma.user.create({
             data: {
                 email,
                 password: hashedPassword,
+                profile: {
+                    create: {
+                        fullName,
+                    },
+                },
+            },
+            include: {
+                profile: true,
             },
         });
 
-        // 5. Return safe response
-        return res.status(201).json({
+        res.status(201).json({
             id: user.id,
             email: user.email,
-            createdAt: user.createdAt,
+            profile: user.profile,
         });
     } catch (err) {
         console.error(err);
-        return res.status(500).json({ error: "Internal server error" });
+        res.status(500).json({ error: "Internal server error" });
     }
 });
+
 
 router.post("/login", async (req, res) => {
     try {

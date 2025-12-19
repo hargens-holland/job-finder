@@ -10,42 +10,77 @@ const router = express.Router();
  */
 router.get("/overview", auth, async (req, res) => {
     try {
-        let profile = await prisma.profile.findUnique({
+        const profile = await prisma.profile.findUnique({
             where: { userId: req.userId },
         });
 
-        // Auto-create profile if missing
-        if (!profile) {
-            profile = await prisma.profile.create({
-                data: {
-                    userId: req.userId,
-                    fullName: "",
-                },
-            });
-        }
+        res.json({
+            hasProfile: Boolean(profile),
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
 
-        // Re-fetch with relations AFTER creation
-        const fullProfile = await prisma.profile.findUnique({
+/**
+ * GET /me/stats
+ * Returns dashboard stats for the current user
+ */
+router.get("/stats", auth, async (req, res) => {
+    try {
+        // Count total applications
+        const jobsApplied = await prisma.application.count({
             where: { userId: req.userId },
-            include: {
-                skills: true,
-                projects: true,
-                experiences: true,
-                activities: true,
+        });
+
+        // Count active applications (not rejected)
+        const activeApplications = await prisma.application.count({
+            where: {
+                userId: req.userId,
+                status: {
+                    not: "REJECTED",
+                },
             },
         });
 
-        const hasValidProfile =
-            Boolean(fullProfile.fullName && fullProfile.fullName.trim());
+        // Count available matches (jobs with match score > 0 that user hasn't applied to)
+        // This requires loading profile and jobs, so we'll compute it
+        const profile = await prisma.profile.findUnique({
+            where: { userId: req.userId },
+            include: { skills: true },
+        });
+
+        let matchesAvailable = null;
+        if (profile) {
+            const appliedJobIds = await prisma.application.findMany({
+                where: { userId: req.userId },
+                select: { jobId: true },
+            });
+            const appliedJobIdSet = new Set(appliedJobIds.map((a) => a.jobId));
+
+            const allJobs = await prisma.job.findMany();
+            const matchJob = require("../matching/matchJob");
+
+            const matchedCount = allJobs
+                .filter((job) => !appliedJobIdSet.has(job.id))
+                .map((job) => ({
+                    job,
+                    score: matchJob(profile, job),
+                }))
+                .filter(({ score }) => score > 0).length;
+
+            matchesAvailable = matchedCount;
+        }
 
         res.json({
-            hasProfile: true,
-            hasValidProfile,
-            profileCompleteness: hasValidProfile ? 100 : 0,
+            jobsApplied,
+            activeApplications,
+            matchesAvailable,
         });
     } catch (err) {
-        console.error("ME OVERVIEW ERROR:", err);
-        res.status(500).json({ error: "Internal server error" });
+        console.error(err);
+        res.status(500).json({ error: "Failed to load stats" });
     }
 });
 

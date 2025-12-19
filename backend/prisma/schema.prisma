@@ -19,6 +19,8 @@ model User {
   email     String   @unique
   password  String
   profile   Profile?
+  applications Application[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -81,4 +83,45 @@ model Activity {
 
   profileId   String
   profile     Profile @relation(fields: [profileId], references: [id])
+}
+
+model Job {
+  id          String   @id @default(uuid())
+
+  title       String
+  company     String
+  location    String
+  description String
+  applications Application[]
+
+
+  // simple skill keywords for MVP matching
+  skills      String[]
+
+  createdAt   DateTime @default(now())
+}
+
+model Application {
+  id        String   @id @default(uuid())
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id])
+
+  status    ApplicationStatus @default(APPLIED)
+  notes     String?
+
+  appliedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, jobId])
+}
+
+enum ApplicationStatus {
+  APPLIED
+  INTERVIEW
+  OFFER
+  REJECTED
 }
